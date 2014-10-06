@@ -4,12 +4,16 @@ require 'mysql2-cs-bind'
 require 'rack-flash'
 require 'json'
 require 'redis'
+require 'stackprof' if ENV['ISUPROFILE']
 
 module Isucon4
   class App < Sinatra::Base
     use Rack::Session::Cookie, secret: ENV['ISU4_SESSION_SECRET'] || 'shirokane'
     use Rack::Flash
     set :public_folder, File.expand_path('../../public', __FILE__)
+
+    Dir.mkdir('/tmp/stackprof') unless File.exist?('/tmp/stackprof')
+    use StackProf::Middleware, enabled: ENV['ISUPROFILE'] == ?1, mode: :cpu, interval: 1000, save_every: 100, path: '/tmp/stackprof'
 
     USER_LOCK_THRESHOLD = 3
     IP_BAN_THRESHOLD = 10
