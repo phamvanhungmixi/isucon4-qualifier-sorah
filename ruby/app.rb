@@ -11,13 +11,11 @@ module Isucon4
     use Rack::Flash
     set :public_folder, File.expand_path('../../public', __FILE__)
 
+    USER_LOCK_THRESHOLD = 3
+    IP_BAN_THRESHOLD = 10
+
     helpers do
-      def config
-        @config ||= {
-          user_lock_threshold: (ENV['ISU4_USER_LOCK_THRESHOLD'] || 3).to_i,
-          ip_ban_threshold: (ENV['ISU4_IP_BAN_THRESHOLD'] || 10).to_i,
-        }
-      end
+
 
       def db
         Thread.current[:isu4_db] ||= Mysql2::Client.new(
@@ -84,14 +82,14 @@ module Isucon4
         failures = redis.get(redis_key_userfail(user))
         failures = failures && failures.to_i
 
-        failures && config[:user_lock_threshold] <= failures
+        failures && USER_LOCK_THRESHOLD <= failures
       end
 
       def ip_banned?
         failures = redis.get(redis_key_ip(request.ip))
         failures = failures && failures.to_i
 
-        failures && config[:ip_ban_threshold] <= failures
+        failures && IP_BAN_THRESHOLD <= failures
       end
 
       def attempt_login(login, password)
@@ -142,22 +140,19 @@ module Isucon4
       end
 
       def banned_ips
-        threshold = config[:ip_ban_threshold]
 
         redis.keys('isu4:ip:*').select do |key|
           failures = redis.get(key).to_i
-          threshold <= failures
+          IP_BAN_THRESHOLD <= failures
         end.map do |key|
           key[8..-1]
         end
       end
 
       def locked_users
-        threshold = config[:user_lock_threshold]
-
         redis.keys('isu4:userfail:*').select do |key|
           failures = redis.get(key).to_i
-          threshold <= failures
+          USER_LOCK_THRESHOLD <= failures
         end.map do |key|
           key[14..-1]
         end
