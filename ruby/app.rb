@@ -42,6 +42,23 @@ module Isucon4
       view(name).result(binding)
     end
 
+    INDEX_NORMAL = ?0
+    INDEX_LOCKED = ?1
+    INDEX_BANNED = ?2
+    INDEX_WRONG  = ?3
+    INDEX_MUST_LOGGED_IN = ?4
+    INDEX_VIEWS = {
+      INDEX_NORMAL => [nil],
+      INDEX_LOCKED => ["This account is locked."],
+      INDEX_BANNED => ["You're banned."],
+      INDEX_WRONG => ["Wrong username or password"],
+      INDEX_MUST_LOGGED_IN => ["You must be logged in"],
+    }.tap do |views|
+      views.each_value do |body|
+        body[0] = [layout(:base)[0], self.view(:index).evaluate(notice: body[0]), layout(:base)[1]].join
+      end
+    end
+
     def self.call(env)
       self.new(env).call
     end
@@ -109,6 +126,10 @@ module Isucon4
 
       def cookie_rem(key)
         (@headers['Set-Cookie'] ||= '') << "#{key}=; path=/; max-age=0\n"
+      end
+
+      def notice
+        
       end
 
       def params
@@ -251,8 +272,9 @@ module Isucon4
 
     module Actions
       def action_index
-        render :index
+        content_type 'text/html'
         cookie_rem :notice
+        @body = INDEX_VIEWS[cookies['notice'] || INDEX_NORMAL]
       end
 
       def action_login
@@ -263,11 +285,11 @@ module Isucon4
         else
           case err
           when :locked
-            cookie_set :notice, "This account is locked."
+            cookie_set :notice, INDEX_LOCKED
           when :banned
-            cookie_set :notice, "You're banned."
+            cookie_set :notice, INDEX_BANNED
           else
-            cookie_set :notice, "Wrong username or password"
+            cookie_set :notice, INDEX_WRONG
           end
           redirect '/'
         end
@@ -275,7 +297,7 @@ module Isucon4
 
       def action_mypage
         unless current_user
-          cookie_set :notice, "You must be logged in"
+          cookie_set :notice, INDEX_MUST_LOGGED_IN
           return redirect '/'
         end
         render :mypage
