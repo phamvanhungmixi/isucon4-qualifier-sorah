@@ -11,12 +11,26 @@ module Isucon4
     IP_BAN_THRESHOLD = 10
 
     VIEWS_DIR = "#{__dir__}/views"
+    LAYOUT_REPLACER = '<%= yield %>'
 
     def self.view(name)
       @views ||= {}
       @views[name] ||= begin
         Erubis::FastEruby.new(File.read(File.join(VIEWS_DIR, "#{name}.erb")))
       end
+    end
+
+    def self.layout(name)
+      @layouts ||= {}
+      e = @layouts[name]
+      return e if e
+
+      body = layout_(name) { LAYOUT_REPLACER }.split(LAYOUT_REPLACER).each(&:freeze)
+      @layouts[name] = body
+    end
+
+    def self.layout_(name)
+      view(name).result(binding)
     end
 
     def self.call(env)
@@ -42,12 +56,13 @@ module Isucon4
       def render(template, layout = :base)
         @headers['Content-Type'] ||= 'text/html'
         @status ||= 200
-        @body = [erb(template, layout)]
+        @body = erb(template, layout)
       end
 
       def erb(name, layout = :base)
         if layout
-          erb(layout, nil) { erb(name, nil) }
+          l = App.layout(layout)
+          [l[0], erb(name, nil), l[1]]
         else
           App.view(name).result(binding)
         end
