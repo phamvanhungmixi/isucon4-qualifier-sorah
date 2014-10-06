@@ -134,9 +134,11 @@ module Isucon4
       end
 
       def last_login
-        cur = current_user
-        return nil unless cur
-        redis.hgetall(redis_key_last(cur)) || redis.hgetall(redis_key_nextlast(cur))
+        @last_login ||= begin
+          cur = current_user
+          return nil unless cur
+          redis.hgetall(redis_key_last(cur)) || redis.hgetall(redis_key_nextlast(cur))
+        end
       end
 
       def banned_ips
