@@ -20,7 +20,10 @@ module Isucon4
     def self.view(name)
       @views ||= {}
       @views[name] ||= begin
-        Erubis::FastEruby.new(File.read(File.join(VIEWS_DIR, "#{name}.erb")))
+        path = File.join(VIEWS_DIR, "#{name}.erb")
+        Erubis::FastEruby.new(File.read(path)).tap do |erb|
+          erb.filename = path
+        end
       end
     end
 
