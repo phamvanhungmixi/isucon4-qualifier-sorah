@@ -1,4 +1,4 @@
-worker_processes 10
+worker_processes 2
 preload_app true
 listen "/tmp/unicorn.sock"
 

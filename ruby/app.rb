@@ -13,6 +13,10 @@ module Isucon4
     VIEWS_DIR = "#{__dir__}/views"
     LAYOUT_REPLACER = '<%= yield %>'
 
+    def self.users
+      @users ||= {}
+    end
+
     def self.view(name)
       @views ||= {}
       @views[name] ||= begin
@@ -137,21 +141,21 @@ module Isucon4
         "isu4:ip:#{ip}"
       end
 
+      def get_user(login)
+        # App.users[login] ||= 
+        redis.hgetall(redis_key_user(login))
+      end
+
       def login_log(succeeded, login, user = nil)
         kuser = user && redis_key_userfail(user) 
         kip = redis_key_ip(request.ip)
 
         if succeeded
           klast, knextlast = redis_key_last(user), redis_key_nextlast(user)
-          redis.set kip, 0
-          redis.set kuser, 0
+          redis.mset kip, 0, kuser, 0
 
-          if redis.exists(knextlast)
-            redis.rename(knextlast, klast)
-            redis.hmset knextlast, 'at', Time.now.to_i, 'ip', request.ip
-          else
-            redis.hmset knextlast, 'at', Time.now.to_i, 'ip', request.ip
-          end
+          redis.rename(knextlast, klast) rescue nil # Redis::CommandError
+          redis.hmset knextlast, 'at', Time.now.to_i, 'ip', request.ip
         else
           redis.incr kip
           redis.incr kuser
@@ -174,7 +178,7 @@ module Isucon4
       end
 
       def attempt_login(login, password)
-        user = redis.hgetall(redis_key_user(login))
+        user = get_user(login)
 
         if ip_banned?
           login_log(false, login, user)
@@ -203,7 +207,7 @@ module Isucon4
         login = cookies['login']
         return nil unless login
 
-        @current_user = redis.hgetall(redis_key_user(login))
+        @current_user = get_user(login)
         unless @current_user
           cookie_set :login, nil
           return nil
@@ -222,7 +226,6 @@ module Isucon4
       end
 
       def banned_ips
-
         redis.keys('isu4:ip:*').select do |key|
           failures = redis.get(key).to_i
           IP_BAN_THRESHOLD <= failures
