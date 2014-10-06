@@ -38,8 +38,12 @@ module Isucon4
         Redis.current
       end
 
-      def redis_key_user(user)
-        "isu4:user:#{user['login']}"
+      def redis_key_user(login)
+        "isu4:user:#{login}"
+      end
+
+      def redis_key_userfail(user)
+        "isu4:userfail:#{user['login']}"
       end
 
       def redis_key_last(user)
@@ -55,7 +59,7 @@ module Isucon4
       end
 
       def login_log(succeeded, login, user = nil)
-        kuser = user && redis_key_user(user) 
+        kuser = user && redis_key_userfail(user) 
         kip = redis_key_ip(request.ip)
 
         if succeeded
@@ -77,7 +81,7 @@ module Isucon4
 
       def user_locked?(user)
         return nil unless user
-        failures = redis.get(redis_key_user(user))
+        failures = redis.get(redis_key_userfail(user))
         failures = failures && failures.to_i
 
         failures && config[:user_lock_threshold] <= failures
@@ -91,7 +95,7 @@ module Isucon4
       end
 
       def attempt_login(login, password)
-        user = db.xquery('SELECT * FROM users WHERE login = ?', login).first
+        user = redis.hgetall(redis_key_user(login))
 
         if ip_banned?
           login_log(false, login, user)
@@ -103,7 +107,7 @@ module Isucon4
           return [nil, :locked]
         end
 
-        if user && calculate_password_hash(password, user['salt']) == user['password_hash']
+        if user && calculate_password_hash(password, user['salt']) == user['password']
           login_log(true, login, user)
           [user, nil]
         elsif user
@@ -117,11 +121,12 @@ module Isucon4
 
       def current_user
         return @current_user if @current_user
-        return nil unless session[:user_id]
+        login = session[:login]
+        return nil unless login
 
-        @current_user = db.xquery('SELECT * FROM users WHERE id = ?', session[:user_id].to_i).first
+        @current_user = redis.hgetall(redis_key_user(login))
         unless @current_user
-          session[:user_id] = nil
+          session[:login] = nil
           return nil
         end
 
@@ -148,11 +153,11 @@ module Isucon4
       def locked_users
         threshold = config[:user_lock_threshold]
 
-        redis.keys('isu4:user:*').select do |key|
+        redis.keys('isu4:userfail:*').select do |key|
           failures = redis.get(key).to_i
           threshold <= failures
         end.map do |key|
-          key[10..-1]
+          key[14..-1]
         end
       end
     end
@@ -164,7 +169,7 @@ module Isucon4
     post '/login' do
       user, err = attempt_login(params[:login], params[:password])
       if user
-        session[:user_id] = user['id']
+        session[:login] = user['login']
         redirect '/mypage'
       else
         case err
