@@ -1,86 +1,36 @@
+require 'sinatra/base'
 require 'digest/sha2'
-require 'rack/utils'
-require 'rack/request'
+require 'mysql2-cs-bind'
+require 'rack-flash'
 require 'json'
 require 'redis'
 require 'erubis'
+require 'stackprof' #if ENV['ISUPROFILE']
 
 module Isucon4
-  class App
+  class App < Sinatra::Base
+    use Rack::Session::Cookie, secret: ENV['ISU4_SESSION_SECRET'] || 'shirokane'
+    use Rack::Flash
+    set :public_folder, File.expand_path('../../public', __FILE__)
+
+    Dir.mkdir('/tmp/stackprof') unless File.exist?('/tmp/stackprof')
+    use StackProf::Middleware, enabled: ENV['ISUPROFILE'] == ?1, mode: :cpu, interval: 1000, save_every: 100, path: '/tmp/stackprof'
+
     USER_LOCK_THRESHOLD = 3
     IP_BAN_THRESHOLD = 10
 
-    VIEWS_DIR = "#{__dir__}/views"
+    helpers do
 
-    def self.view(name)
-      @views ||= {}
-      @views[name] ||= begin
-        Erubis::FastEruby.new(File.read(File.join(VIEWS_DIR, "#{name}.erb")))
-      end
-    end
 
-    def self.call(env)
-      self.new(env).call
-    end
-
-    def initialize(env)
-      @env = env
-      @status = nil
-      @headers = {}
-      @body = []
-    end
-
-    module ResponseMethods
-      def response
-        [@status || 200, @headers, @body]
-      end
-
-      def content_type(type)
-        @headers['Content-Type'] = type
-      end
-
-      def render(template, layout = :base)
-        @headers['Content-Type'] ||= 'text/html'
-        @status ||= 200
-        @body = [erb(template, layout)]
-      end
-
-      def erb(name, layout = :base)
-        if layout
-          erb(layout, nil) { erb(name, nil) }
-        else
-          App.view(name).result(binding)
-        end
-      end
-
-      def not_found
-        @status = 404
-        @headers = {'Content-Type' => 'text/plain'}
-        @body = ['not found']
-      end
-
-      def redirect(path)
-        if @env['HTTP_VERSION'] == 'HTTP/1.1' && @env["REQUEST_METHOD"] != 'GET'
-          @status = 303
-        else
-          @status = 302
-        end
-
-        @headers['Location'] = path
-      end
-    end
-
-    module Helpers
-      def request
-        @request ||= Rack::Request.new(@env)
-      end
-
-      def session
-        @session ||= @env['rack.session']
-      end
-
-      def params
-        @params ||= request.params
+      def db
+        Thread.current[:isu4_db] ||= Mysql2::Client.new(
+          host: ENV['ISU4_DB_HOST'] || 'localhost',
+          port: ENV['ISU4_DB_PORT'] ? ENV['ISU4_DB_PORT'].to_i : nil,
+          username: ENV['ISU4_DB_USER'] || 'root',
+          password: ENV['ISU4_DB_PASSWORD'],
+          database: ENV['ISU4_DB_NAME'] || 'isu4_qualifier',
+          reconnect: true,
+        )
       end
 
       def calculate_password_hash(password, salt)
@@ -88,12 +38,9 @@ module Isucon4
       end
 
       def redis
-        # assuming each object isn't shared across threads
-        @redis ||= Redis.current
+        Redis.current
       end
 
-
-        
       def redis_key_user(login)
         "isu4:user:#{login}"
       end
@@ -193,8 +140,7 @@ module Isucon4
         @last_login ||= begin
           cur = current_user
           return nil unless cur
-          last = redis.hgetall(redis_key_last(cur))
-          last.empty? ? redis.hgetall(redis_key_nextlast(cur)) : last
+          redis.hgetall(redis_key_last(cur)) || redis.hgetall(redis_key_nextlast(cur))
         end
       end
 
@@ -218,73 +164,42 @@ module Isucon4
       end
     end
 
-    module Actions
-      def action_index
-        render :index
-        session[:notice] = nil
-      end
+    get '/' do
+      erb :index, layout: :base
+    end
 
-      def action_login
-        user, err = attempt_login(params['login'], params['password'])
-        if user
-          session[:login] = user['login']
-          redirect '/mypage'
+    post '/login' do
+      user, err = attempt_login(params[:login], params[:password])
+      if user
+        session[:login] = user['login']
+        redirect '/mypage'
+      else
+        case err
+        when :locked
+          flash[:notice] = "This account is locked."
+        when :banned
+          flash[:notice] = "You're banned."
         else
-          case err
-          when :locked
-            session[:notice] = "This account is locked."
-          when :banned
-            session[:notice] = "You're banned."
-          else
-            session[:notice] = "Wrong username or password"
-          end
-          redirect '/'
+          flash[:notice] = "Wrong username or password"
         end
-      end
-
-      def action_mypage
-        unless current_user
-          session[:notice] = "You must be logged in"
-          redirect '/'
-        end
-        render :mypage
-      end
-
-      def action_report
-        content_type 'application/json'
-        @body = [{
-          banned_ips: banned_ips,
-          locked_users: locked_users,
-        }.to_json]
+        redirect '/'
       end
     end
 
-    include ResponseMethods
-    include Helpers
-    include Actions
-
-    def call
-      case @env['REQUEST_METHOD']
-      when 'GET'
-        case @env['PATH_INFO']
-        when "/"; action_index
-        when "/mypage"; action_mypage
-        when "/report"; action_report
-        else; not_found
-        end
-
-      when 'POST'
-        case @env['PATH_INFO']
-        when '/login'; action_login
-        else; not_found
-        end
-
-      else
-        not_found
+    get '/mypage' do
+      unless current_user
+        flash[:notice] = "You must be logged in"
+        redirect '/'
       end
+      erb :mypage, layout: :base
+    end
 
-      @body = [@body] unless @body.respond_to?(:each)
-      response
+    get '/report' do
+      content_type :json
+      {
+        banned_ips: banned_ips,
+        locked_users: locked_users,
+      }.to_json
     end
   end
 end
