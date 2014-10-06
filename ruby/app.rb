@@ -90,8 +90,16 @@ module Isucon4
         @request ||= Rack::Request.new(@env)
       end
 
-      def session
-        @session ||= @env['rack.session']
+      def cookies
+        @cookies ||= request.cookies.tap(&:freeze)
+      end
+
+      def cookie_set(key, value)
+        (@headers['Set-Cookie'] ||= '') << "#{key}=#{Rack::Utils.escape(value || '')}; path=/\n"
+      end
+
+      def cookie_rem(key)
+        (@headers['Set-Cookie'] ||= '') << "#{key}=; path=/; max-age=0\n"
       end
 
       def params
@@ -192,12 +200,12 @@ module Isucon4
 
       def current_user
         return @current_user if @current_user
-        login = session[:login]
+        login = cookies['login']
         return nil unless login
 
         @current_user = redis.hgetall(redis_key_user(login))
         unless @current_user
-          session[:login] = nil
+          cookie_set :login, nil
           return nil
         end
 
@@ -236,22 +244,22 @@ module Isucon4
     module Actions
       def action_index
         render :index
-        session[:notice] = nil
+        cookie_rem :notice
       end
 
       def action_login
         user, err = attempt_login(params['login'], params['password'])
         if user
-          session[:login] = user['login']
+          cookie_set :login, user['login']
           redirect '/mypage'
         else
           case err
           when :locked
-            session[:notice] = "This account is locked."
+            cookie_set :notice, "This account is locked."
           when :banned
-            session[:notice] = "You're banned."
+            cookie_set :notice, "You're banned."
           else
-            session[:notice] = "Wrong username or password"
+            cookie_set :notice, "Wrong username or password"
           end
           redirect '/'
         end
@@ -259,8 +267,8 @@ module Isucon4
 
       def action_mypage
         unless current_user
-          session[:notice] = "You must be logged in"
-          redirect '/'
+          cookie_set :notice, "You must be logged in"
+          return redirect '/'
         end
         render :mypage
       end
