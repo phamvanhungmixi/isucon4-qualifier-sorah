@@ -8,6 +8,7 @@ GEM
     foreman (0.74.0)
       dotenv (~> 0.11.1)
       thor (~> 0.19.1)
+    hiredis (0.5.2)
     kgio (2.9.2)
     mysql2 (0.3.16)
     mysql2-cs-bind (0.0.6)
@@ -37,6 +38,7 @@ PLATFORMS
 DEPENDENCIES
   erubis
   foreman
+  hiredis
   mysql2-cs-bind
   rack-flash3
   redis

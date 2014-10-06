@@ -2,7 +2,9 @@ require 'digest/sha2'
 require 'rack/utils'
 require 'rack/request'
 require 'json'
+require 'hiredis'
 require 'redis'
+require 'redis/connection/hiredis'
 require 'erubis'
 
 module Isucon4
