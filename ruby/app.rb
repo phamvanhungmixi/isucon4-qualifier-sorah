@@ -42,19 +42,19 @@ module Isucon4
       view(name).result(binding)
     end
 
-    INDEX_NORMAL = ?0
-    INDEX_LOCKED = ?1
-    INDEX_BANNED = ?2
-    INDEX_WRONG  = ?3
-    INDEX_MUST_LOGGED_IN = ?4
-    INDEX_VIEWS = {
-      INDEX_NORMAL => [nil],
-      INDEX_LOCKED => ["This account is locked."],
-      INDEX_BANNED => ["You're banned."],
-      INDEX_WRONG => ["Wrong username or password"],
-      INDEX_MUST_LOGGED_IN => ["You must be logged in"],
-    }.tap do |views|
-      views.each_value do |body|
+    INDEX_NORMAL = 0
+    INDEX_LOCKED = 1
+    INDEX_BANNED = 2
+    INDEX_WRONG  = 3
+    INDEX_MUST_LOGGED_IN = 4
+    INDEX_VIEWS = [
+      [nil],
+      ["This account is locked."],
+      ["You're banned."],
+      ["Wrong username or password"],
+      ["You must be logged in"],
+    ].tap do |views|
+      views.each do |body|
         body[0] = [layout(:base)[0], self.view(:index).evaluate(notice: body[0]), layout(:base)[1]].join
       end
     end
@@ -274,7 +274,8 @@ module Isucon4
       def action_index
         content_type 'text/html'
         cookie_rem :notice
-        @body = INDEX_VIEWS[cookies['notice'] || INDEX_NORMAL]
+        n = cookies['notice']
+        @body = INDEX_VIEWS[n ? n.to_i : 0]
       end
 
       def action_login
