@@ -5,7 +5,7 @@ require 'rack-flash'
 require 'json'
 require 'redis'
 require 'erubis'
-require 'stackprof' if ENV['ISUPROFILE']
+require 'stackprof' #if ENV['ISUPROFILE']
 
 module Isucon4
   class App < Sinatra::Base
