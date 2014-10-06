@@ -318,21 +318,23 @@ module Isucon4
     include Actions
 
     def call
-      case @env['REQUEST_METHOD']
-      when 'GET'
-        case @env['PATH_INFO']
-        when "/"; action_index
-        when "/mypage"; action_mypage
-        when "/report"; action_report
-        else; not_found
-        end
+      meth = @env['REQUEST_METHOD'.freeze]
+      path = @env['PATH_INFO'.freeze]
 
-      when 'POST'
-        case @env['PATH_INFO']
-        when '/login'; action_login
-        else; not_found
+      case
+      when path == '/login'.freeze
+        action_login
+      when meth == 'GET'.freeze
+        case path
+        when '/'.freeze
+          action_index
+        when '/mypage'.freeze
+          action_mypage
+        when '/report'.freeze
+          action_report
+        else
+          not_found
         end
-
       else
         not_found
       end
