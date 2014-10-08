@@ -55,7 +55,7 @@ module Isucon4
       ["You must be logged in"],
     ].tap do |views|
       views.each do |body|
-        body[0] = [layout(:base)[0], self.view(:index).evaluate(notice: body[0]), layout(:base)[1]].join
+        body[0] = [layout(:base)[0], self.view(:index).evaluate(notice: body[0]), layout(:base)[1]].join.gsub(/^\s+/,'').gsub(/[\r\n]/,'')
       end
     end
 
