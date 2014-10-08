@@ -137,8 +137,7 @@ module Isucon4
       end
 
       def redis
-        # assuming each object isn't shared across threads
-        @redis ||= Redis.current
+        @redis ||= (Thread.current[:isu4_redis] ||= Redis.new(path: '/tmp/redis.sock'))
       end
         
       def redis_key_user(login)
