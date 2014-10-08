@@ -128,10 +128,6 @@ module Isucon4
         (@headers['Set-Cookie'] ||= '') << "#{key}=; path=/; max-age=0\n"
       end
 
-      def notice
-        
-      end
-
       def params
         @params ||= request.params
       end
@@ -144,8 +140,6 @@ module Isucon4
         # assuming each object isn't shared across threads
         @redis ||= Redis.current
       end
-
-
         
       def redis_key_user(login)
         "isu4:user:#{login}"
