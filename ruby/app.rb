@@ -198,25 +198,22 @@ module Isucon4
       def attempt_login(login, password)
         user = get_user(login)
 
-        if ip_banned?
+        case
+        when ip_banned?
           login_log(false, login, user)
-          return [nil, :banned]
-        end
-
-        if user_locked?(user)
-          login_log(false, login, user)
-          return [nil, :locked]
-        end
-
-        if user && calculate_password_hash(password, user['salt']) == user['password']
-          login_log(true, login, user)
-          [user, nil]
-        elsif user
-          login_log(false, login, user)
-          [nil, :wrong_password]
-        else
+          [nil, :banned]
+        when !user
           login_log(false, login)
           [nil, :wrong_login]
+        when user_locked?(user)
+          login_log(false, login, user)
+          [nil, :locked]
+        when calculate_password_hash(password, user['salt']) == user['password']
+          login_log(true, login, user)
+          [user, nil]
+        else
+          login_log(false, login, user)
+          [nil, :wrong_password]
         end
       end
 
