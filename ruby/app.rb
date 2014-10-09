@@ -274,7 +274,7 @@ module Isucon4
         user, err = attempt_login(params['login'], params['password'])
         if user
           cookie_set 'login'.freeze, user['login']
-          redirect '/mypage'
+          redirect '/mypage'.freeze
         else
           case err
           when :locked
@@ -284,7 +284,7 @@ module Isucon4
           else
             cookie_set 'notice'.freeze, INDEX_WRONG
           end
-          redirect '/'
+          redirect '/'.freeze
         end
       end
 
