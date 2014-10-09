@@ -120,11 +120,11 @@ module Isucon4
       end
 
       def cookie_set(key, value)
-        (@headers['Set-Cookie'] ||= '') << "#{key}=#{Rack::Utils.escape(value || '')}; path=/\n"
+        (@headers['Set-Cookie'] ||= '') << "#{key}=#{value};path=/\n"
       end
 
       def cookie_rem(key)
-        (@headers['Set-Cookie'] ||= '') << "#{key}=; path=/; max-age=0\n"
+        (@headers['Set-Cookie'] ||= '') << "#{key}=;path=/;max-age=0\n"
       end
 
       def params
