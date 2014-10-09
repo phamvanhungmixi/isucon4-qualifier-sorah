@@ -201,19 +201,19 @@ module Isucon4
         case
         when ip_banned?
           login_log(false, login, user)
-          [nil, :banned]
+          [nil, INDEX_BANNED]
         when !user
           login_log(false, login)
-          [nil, :wrong_login]
+          [nil, INDEX_WRONG] # login
         when user_locked?(user)
           login_log(false, login, user)
-          [nil, :locked]
+          [nil, INDEX_LOCKED]
         when calculate_password_hash(password, user['salt']) == user['password']
           login_log(true, login, user)
           [user, nil]
         else
           login_log(false, login, user)
-          [nil, :wrong_password]
+          [nil, INDEX_WRONG] # pass
         end
       end
 
@@ -273,14 +273,7 @@ module Isucon4
           cookie_set 'login'.freeze, user['login']
           redirect '/mypage'.freeze
         else
-          case err
-          when :locked
-            cookie_set 'notice'.freeze, INDEX_LOCKED
-          when :banned
-            cookie_set 'notice'.freeze, INDEX_BANNED
-          else
-            cookie_set 'notice'.freeze, INDEX_WRONG
-          end
+          cookie_set 'notice'.freeze, err
           redirect '/'.freeze
         end
       end
