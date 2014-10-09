@@ -164,6 +164,8 @@ module Isucon4
         redis.hgetall(redis_key_user(login))
       end
 
+
+      MINCR = Redis.current.script(:load, "redis.call('incr', KEYS[1]); redis.call('incr', KEYS[2])")
       def login_log(succeeded, login)
         kuser = redis_key_userfail(login) 
         kip = redis_key_ip(request_ip)
@@ -175,8 +177,7 @@ module Isucon4
           redis.rename(knextlast, klast) rescue nil # Redis::CommandError
           redis.hmset knextlast, 'at', Time.now.to_i, 'ip', request_ip
         else
-          redis.incr kip
-          redis.incr kuser
+          redis.evalsha MINCR, [kip, kuser], []
         end
       end
 
