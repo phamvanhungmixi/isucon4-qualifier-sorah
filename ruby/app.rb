@@ -228,7 +228,7 @@ module Isucon4
 
         @current_user = get_user(login)
         unless @current_user
-          cookie_set :login, nil
+          cookie_set 'login'.freeze, nil
           return nil
         end
 
@@ -266,7 +266,7 @@ module Isucon4
     module Actions
       def action_index
         content_type 'text/html'
-        cookie_rem :notice
+        cookie_rem 'notice'.freeze
         n = cookies['notice']
         @body = INDEX_VIEWS[n ? n.to_i : 0]
       end
@@ -274,16 +274,16 @@ module Isucon4
       def action_login
         user, err = attempt_login(params['login'], params['password'])
         if user
-          cookie_set :login, user['login']
+          cookie_set 'login'.freeze, user['login']
           redirect '/mypage'
         else
           case err
           when :locked
-            cookie_set :notice, INDEX_LOCKED
+            cookie_set 'notice'.freeze, INDEX_LOCKED
           when :banned
-            cookie_set :notice, INDEX_BANNED
+            cookie_set 'notice'.freeze, INDEX_BANNED
           else
-            cookie_set :notice, INDEX_WRONG
+            cookie_set 'notice'.freeze, INDEX_WRONG
           end
           redirect '/'
         end
@@ -291,7 +291,7 @@ module Isucon4
 
       def action_mypage
         unless current_user
-          cookie_set :notice, INDEX_MUST_LOGGED_IN
+          cookie_set 'notice'.freeze, INDEX_MUST_LOGGED_IN
           return redirect '/'
         end
 
