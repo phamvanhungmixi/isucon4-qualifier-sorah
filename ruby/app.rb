@@ -296,6 +296,7 @@ module Isucon4
       end
 
       def action_report
+        redis.save
         content_type 'application/json'
         @body = [{
           banned_ips: banned_ips,
