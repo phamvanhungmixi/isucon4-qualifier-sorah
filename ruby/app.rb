@@ -176,7 +176,7 @@ module Isucon4
           redis.hmset knextlast, 'at', Time.now.to_i, 'ip', request_ip
         else
           redis.incr kip
-          redis.incr kuser
+          redis.incr kuser if kuser
         end
       end
 
