@@ -101,13 +101,8 @@ module Isucon4
       end
 
       def redirect(path)
-        if @env['HTTP_VERSION'] == 'HTTP/1.1' && @env["REQUEST_METHOD"] != 'GET'
-          @status = 303
-        else
-          @status = 302
-        end
-
-        @headers['Location'] = path
+        @status = 302
+        @headers['Location'.freeze] = path
       end
     end
 
