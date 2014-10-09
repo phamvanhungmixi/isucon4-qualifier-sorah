@@ -88,9 +88,9 @@ module Isucon4
       def erb(name, layout = :base)
         if layout
           l = App.layout(layout)
-          [l[0], erb(name, nil), l[1]]
+          [l[0], erb(name, nil)[0], l[1]]
         else
-          App.view(name).result(binding)
+          [App.view(name).result(binding)]
         end
       end
 
@@ -333,7 +333,6 @@ module Isucon4
         not_found
       end
 
-      @body = [@body] unless @body.respond_to?(:each)
       response
     end
   end
