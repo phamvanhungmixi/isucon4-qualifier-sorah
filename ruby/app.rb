@@ -266,7 +266,7 @@ module Isucon4
         content_type 'text/html'
         n = cookies['notice'.freeze]
         cookie_rem 'notice'.freeze if n
-        @body = INDEX_VIEWS[n ? n.to_i : 0]
+        @body = INDEX_VIEWS[n.to_i]
       end
 
       def action_login
