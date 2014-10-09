@@ -143,16 +143,16 @@ module Isucon4
         "isu4:user:#{login}"
       end
 
-      def redis_key_userfail(user)
-        "isu4:userfail:#{user['login']}"
+      def redis_key_userfail(login)
+        "isu4:userfail:#{login}"
       end
 
-      def redis_key_last(user)
-        "isu4:last:#{user['login']}"
+      def redis_key_last(login)
+        "isu4:last:#{login}"
       end
 
-      def redis_key_nextlast(user = {'id' => '*'})
-        "isu4:nextlast:#{user['login']}"
+      def redis_key_nextlast(login)
+        "isu4:nextlast:#{login}"
       end
 
       def redis_key_ip(ip)
@@ -164,25 +164,25 @@ module Isucon4
         redis.hgetall(redis_key_user(login))
       end
 
-      def login_log(succeeded, login, user = nil)
-        kuser = user && redis_key_userfail(user) 
+      def login_log(succeeded, login)
+        kuser = redis_key_userfail(login) 
         kip = redis_key_ip(request_ip)
 
         if succeeded
-          klast, knextlast = redis_key_last(user), redis_key_nextlast(user)
+          klast, knextlast = redis_key_last(login), redis_key_nextlast(login)
           redis.mset kip, 0, kuser, 0
 
           redis.rename(knextlast, klast) rescue nil # Redis::CommandError
           redis.hmset knextlast, 'at', Time.now.to_i, 'ip', request_ip
         else
           redis.incr kip
-          redis.incr kuser if kuser
+          redis.incr kuser
         end
       end
 
-      def user_locked?(user)
-        return nil unless user
-        failures = redis.get(redis_key_userfail(user))
+      def user_locked?(login)
+        return nil unless login
+        failures = redis.get(redis_key_userfail(login))
         failures = failures && failures.to_i
 
         failures && USER_LOCK_THRESHOLD <= failures
@@ -196,23 +196,25 @@ module Isucon4
       end
 
       def attempt_login(login, password)
+        if ip_banned?
+          login_log(false, login)
+          return [nil, INDEX_BANNED]
+        end
+
         user = get_user(login)
 
         case
-        when ip_banned?
-          login_log(false, login, user)
-          [nil, INDEX_BANNED]
         when !user
           login_log(false, login)
           [nil, INDEX_WRONG] # login
-        when user_locked?(user)
-          login_log(false, login, user)
+        when user_locked?(login)
+          login_log(false, login)
           [nil, INDEX_LOCKED]
         when calculate_password_hash(password, user['salt']) == user['password']
-          login_log(true, login, user)
+          login_log(true, login)
           [user, nil]
         else
-          login_log(false, login, user)
+          login_log(false, login)
           [nil, INDEX_WRONG] # pass
         end
       end
@@ -235,8 +237,8 @@ module Isucon4
         @last_login ||= begin
           cur = current_user
           return nil unless cur
-          last = redis.hgetall(redis_key_last(cur))
-          last.empty? ? redis.hgetall(redis_key_nextlast(cur)) : last
+          last = redis.hgetall(redis_key_last(cur['login']))
+          last.empty? ? redis.hgetall(redis_key_nextlast(cur['login'])) : last
         end
       end
 
