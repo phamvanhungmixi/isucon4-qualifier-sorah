@@ -116,8 +116,12 @@ module Isucon4
         @request ||= Rack::Request.new(@env)
       end
 
+      def request_ip
+        @env['HTTP_X_FORWARDED_FOR'] || @env['REMOTE_ADDR']
+      end
+
       def cookies
-        @cookies ||= request.cookies.tap(&:freeze)
+        @cookies ||= @env['HTTP_COOKIE'] ? @env['HTTP_COOKIE'].split(/;\s*/).map{|_| _.split('='.freeze,2) }.to_h : {}
       end
 
       def cookie_set(key, value)
@@ -167,14 +171,14 @@ module Isucon4
 
       def login_log(succeeded, login, user = nil)
         kuser = user && redis_key_userfail(user) 
-        kip = redis_key_ip(request.ip)
+        kip = redis_key_ip(request_ip)
 
         if succeeded
           klast, knextlast = redis_key_last(user), redis_key_nextlast(user)
           redis.mset kip, 0, kuser, 0
 
           redis.rename(knextlast, klast) rescue nil # Redis::CommandError
-          redis.hmset knextlast, 'at', Time.now.to_i, 'ip', request.ip
+          redis.hmset knextlast, 'at', Time.now.to_i, 'ip', request_ip
         else
           redis.incr kip
           redis.incr kuser
@@ -190,7 +194,7 @@ module Isucon4
       end
 
       def ip_banned?
-        failures = redis.get(redis_key_ip(request.ip))
+        failures = redis.get(redis_key_ip(request_ip))
         failures = failures && failures.to_i
 
         failures && IP_BAN_THRESHOLD <= failures
