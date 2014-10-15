@@ -2,9 +2,7 @@ require 'digest/sha2'
 require 'rack/utils'
 require 'rack/request'
 require 'json'
-require 'hiredis'
-require 'redis'
-require 'redis/connection/hiredis'
+require 'mysql2-cs-bind'
 require 'erubis'
 
 module Isucon4
@@ -135,65 +133,39 @@ module Isucon4
         Digest::SHA256.hexdigest "#{password}:#{salt}"
       end
 
-      def redis
-        @redis ||= (Thread.current[:isu4_redis] ||= Redis.new(path: '/tmp/redis.sock'))
-      end
-        
-      def redis_key_user(login)
-        "isu4:user:#{login}"
-      end
-
-      def redis_key_userfail(login)
-        "isu4:userfail:#{login}"
-      end
-
-      def redis_key_last(login)
-        "isu4:last:#{login}"
-      end
-
-      def redis_key_nextlast(login)
-        "isu4:nextlast:#{login}"
-      end
-
-      def redis_key_ip(ip)
-        "isu4:ip:#{ip}"
+      def db
+        Thread.current[:isu4_db] ||= Mysql2::Client.new(
+          host: 'localhost',
+          port: nil,
+          username: 'root',
+          password: nil,
+          database: 'isu4_qualifier',
+          reconnect: true,
+        )
       end
 
       def get_user(login)
-        # App.users[login] ||= 
-        redis.hgetall(redis_key_user(login))
+        db.xquery('SELECT * FROM users WHERE login = ?', login).first
       end
 
-
-      MINCR = Redis.current.script(:load, "redis.call('incr', KEYS[1]); redis.call('incr', KEYS[2])")
       def login_log(succeeded, login)
-        kuser = redis_key_userfail(login) 
-        kip = redis_key_ip(request_ip)
-
-        if succeeded
-          klast, knextlast = redis_key_last(login), redis_key_nextlast(login)
-          redis.mset kip, 0, kuser, 0
-
-          redis.rename(knextlast, klast) rescue nil # Redis::CommandError
-          redis.hmset knextlast, 'at', Time.now.to_i, 'ip', request_ip
-        else
-          redis.evalsha MINCR, [kip, kuser], []
-        end
+        db.xquery("INSERT INTO login_log" \
+                  " (`created_at`, `login`, `ip`, `succeeded`)" \
+                  " VALUES (?,?,?,?)",
+                 Time.now, login, request.ip, succeeded ? 1 : 0)
       end
 
       def user_locked?(login)
         return nil unless login
-        failures = redis.get(redis_key_userfail(login))
-        failures = failures && failures.to_i
+        log = db.xquery("SELECT COUNT(1) AS failures FROM login_log WHERE login = ? AND id > IFNULL((select id from login_log where login = ? AND succeeded = 1 ORDER BY id DESC LIMIT 1), 0);", login, login).first
 
-        failures && USER_LOCK_THRESHOLD <= failures
+        USER_LOCK_THRESHOLD <= log['failures']
       end
 
       def ip_banned?
-        failures = redis.get(redis_key_ip(request_ip))
-        failures = failures && failures.to_i
+        log = db.xquery("SELECT COUNT(1) AS failures FROM login_log WHERE ip = ? AND id > IFNULL((select id from login_log where ip = ? AND succeeded = 1 ORDER BY id DESC LIMIT 1), 0);", request.ip, request.ip).first
 
-        failures && IP_BAN_THRESHOLD <= failures
+        IP_BAN_THRESHOLD <= log['failures']
       end
 
       def attempt_login(login, password)
@@ -203,6 +175,7 @@ module Isucon4
         end
 
         user = get_user(login)
+        p user
 
         case
         when !user
@@ -211,7 +184,7 @@ module Isucon4
         when user_locked?(login)
           login_log(false, login)
           [nil, INDEX_LOCKED]
-        when calculate_password_hash(password, user['salt']) == user['password']
+        when calculate_password_hash(password, user['salt']) == user['password_hash']
           login_log(true, login)
           [user, nil]
         else
@@ -238,27 +211,51 @@ module Isucon4
         @last_login ||= begin
           cur = current_user
           return nil unless cur
-          last = redis.hgetall(redis_key_last(cur['login']))
-          last.empty? ? redis.hgetall(redis_key_nextlast(cur['login'])) : last
+
+          db.xquery('SELECT * FROM login_log WHERE succeeded = 1 AND login = ? ORDER BY id DESC LIMIT 2', cur['login']).each.last
         end
       end
 
       def banned_ips
-        redis.keys('isu4:ip:*').select do |key|
-          failures = redis.get(key).to_i
-          IP_BAN_THRESHOLD <= failures
-        end.map do |key|
-          key[8..-1]
+        ips = []
+        threshold = IP_BAN_THRESHOLD
+
+        not_succeeded = db.xquery('SELECT ip FROM (SELECT ip, MAX(succeeded) as max_succeeded, COUNT(1) as cnt FROM login_log GROUP BY ip) AS t0 WHERE t0.max_succeeded = 0 AND t0.cnt >= ?', threshold)
+
+        ips.concat not_succeeded.each.map { |r| r['ip'] }
+
+        last_succeeds = db.xquery('SELECT ip, MAX(id) AS last_login_id FROM login_log WHERE succeeded = 1 GROUP by ip')
+
+        last_succeeds.each do |row|
+          count = db.xquery('SELECT COUNT(1) AS cnt FROM login_log WHERE ip = ? AND ? < id', row['ip'], row['last_login_id']).first['cnt']
+          if threshold <= count
+            ips << row['ip']
+          end
         end
+
+        ips
       end
 
       def locked_users
-        redis.keys('isu4:userfail:*').select do |key|
-          failures = redis.get(key).to_i
-          USER_LOCK_THRESHOLD <= failures
-        end.map do |key|
-          key[14..-1]
+        logins = []
+        threshold = USER_LOCK_THRESHOLD
+
+        not_succeeded = db.xquery('SELECT login FROM (SELECT login, MAX(succeeded) as max_succeeded, COUNT(1) as cnt FROM login_log GROUP BY login) AS t0 WHERE t0.max_succeeded = 0 AND t0.cnt >= ?', threshold)
+
+        logins.concat not_succeeded.each.map { |r| r['login'] }
+
+        last_succeeds = db.xquery('SELECT login, MAX(id) AS last_login_id FROM login_log WHERE succeeded = 1 GROUP BY login')
+
+        last_succeeds.each do |row|
+          count = db.xquery('SELECT COUNT(1) AS cnt FROM login_log WHERE login = ? AND ? < id', row['login'], row['last_login_id']).first['cnt']
+          if threshold <= count
+            logins << row['login']
+          end
         end
+        
+        logins.each_slice(500).flat_map { |slice|
+          db.xquery('SELECT login FROM users WHERE login IN (?)', slice).map {|_| _['login'] }
+        }
       end
     end
 
@@ -289,7 +286,7 @@ module Isucon4
 
         @body = [
           '<!DOCTYPE html><html><head><meta charset="UTF-8"><link rel="stylesheet" href="/stylesheets/bootstrap.min.css"><link rel="stylesheet" href="/stylesheets/bootflat.min.css"><link rel="stylesheet" href="/stylesheets/isucon-bank.css"><title>isucon4</title></head><body><div class="container"><h1 id="topbar"><a href="/"><img src="/images/isucon-bank.png" alt="いすこん銀行 オンラインバンキングサービス"></a></h1><div class="alert alert-success" role="alert">ログインに成功しました。<br>未読のお知らせが０件、残っています。</div><dl class="dl-horizontal"><dt>前回ログイン</dt><dd id="last-logined-at">'.freeze,
-          Time.at(last_login['at'].to_i).strftime("%Y-%m-%d %H:%M:%S"),
+          last_login['created_at'].strftime("%Y-%m-%d %H:%M:%S"),
           '</dd><dt>最終ログインIPアドレス</dt><dd id="last-logined-ip">'.freeze,
           last_login['ip'],
           '</dd></dl><div class="panel panel-default"><div class="panel-heading">お客様ご契約ID：'.freeze,
@@ -299,7 +296,6 @@ module Isucon4
       end
 
       def action_report
-        redis.save
         content_type 'application/json'
         @body = [{
           banned_ips: banned_ips,
