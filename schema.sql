@@ -13,3 +13,6 @@ CREATE TABLE IF NOT EXISTS `login_log` (
   `ip` varchar(255) NOT NULL,
   `succeeded` tinyint NOT NULL
 ) DEFAULT CHARSET=utf8;
+
+CREATE INDEX log_ip_succ ON login_log (ip,succeeded);
+CREATE INDEX log_login_succ ON login_log (login,succeeded);
